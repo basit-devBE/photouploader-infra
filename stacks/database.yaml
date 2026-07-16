@@ -1,0 +1,104 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Photo Uploader - RDS PostgreSQL instance (db.t3 family) in private
+  subnets, with credentials generated and stored in Secrets Manager.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: photouploader
+
+  PrivateSubnet1Id:
+    Type: AWS::EC2::Subnet::Id
+
+  PrivateSubnet2Id:
+    Type: AWS::EC2::Subnet::Id
+
+  RdsSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+
+  DBInstanceClass:
+    Type: String
+    Default: db.t3.micro
+
+  DBName:
+    Type: String
+    Default: photouploader
+
+  DBAllocatedStorage:
+    Type: Number
+    Default: 20
+
+Resources:
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Private subnets for the Photo Uploader RDS instance
+      SubnetIds:
+        - !Ref PrivateSubnet1Id
+        - !Ref PrivateSubnet2Id
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-db-subnet-group
+        - Key: Project
+          Value: !Ref ProjectName
+
+  DBSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub ${ProjectName}/db-credentials
+      Description: Master credentials for the Photo Uploader RDS instance
+      GenerateSecretString:
+        SecretStringTemplate: '{"username":"photouploader_app"}'
+        GenerateStringKey: password
+        PasswordLength: 32
+        ExcludeCharacters: '"@/\'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+  DBInstance:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      Engine: postgres
+      DBInstanceClass: !Ref DBInstanceClass
+      DBName: !Ref DBName
+      AllocatedStorage: !Ref DBAllocatedStorage
+      StorageType: gp3
+      StorageEncrypted: true
+      MultiAZ: false
+      PubliclyAccessible: false
+      BackupRetentionPeriod: 7
+      DeletionProtection: false
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VPCSecurityGroups:
+        - !Ref RdsSecurityGroupId
+      MasterUsername: !Sub '{{resolve:secretsmanager:${DBSecret}:SecretString:username}}'
+      MasterUserPassword: !Sub '{{resolve:secretsmanager:${DBSecret}:SecretString:password}}'
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-db
+        - Key: Project
+          Value: !Ref ProjectName
+
+  DBSecretTargetAttachment:
+    Type: AWS::SecretsManager::SecretTargetAttachment
+    Properties:
+      SecretId: !Ref DBSecret
+      TargetId: !Ref DBInstance
+      TargetType: AWS::RDS::DBInstance
+
+Outputs:
+  DBSecretArn:
+    Value: !Ref DBSecret
+
+  DBEndpointAddress:
+    Value: !GetAtt DBInstance.Endpoint.Address
+
+  DBEndpointPort:
+    Value: !GetAtt DBInstance.Endpoint.Port
+
+  DBName:
+    Value: !Ref DBName

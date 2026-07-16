@@ -1,0 +1,96 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Photo Uploader - Private S3 bucket for uploaded images, served exclusively
+  through a CloudFront distribution via Origin Access Control (OAC). The
+  bucket has no public access; only this specific CloudFront distribution
+  may read objects from it.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: photouploader
+
+Resources:
+  ImageBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${ProjectName}-images-${AWS::AccountId}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-images
+        - Key: Project
+          Value: !Ref ProjectName
+
+  ImageOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub ${ProjectName}-oac
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  ImageDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        HttpVersion: http2
+        PriceClass: PriceClass_200
+        Origins:
+          - Id: ImageBucketOrigin
+            DomainName: !GetAtt ImageBucket.RegionalDomainName
+            OriginAccessControlId: !Ref ImageOriginAccessControl
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+        DefaultCacheBehavior:
+          TargetOriginId: ImageBucketOrigin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD]
+          CachedMethods: [GET, HEAD]
+          # Managed policy: CachingOptimized
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-cdn
+        - Key: Project
+          Value: !Ref ProjectName
+
+  ImageBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ImageBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCloudFrontServicePrincipalReadOnly
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub ${ImageBucket.Arn}/*
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${ImageDistribution}
+
+Outputs:
+  ImageBucketName:
+    Value: !Ref ImageBucket
+
+  ImageBucketArn:
+    Value: !GetAtt ImageBucket.Arn
+
+  CloudFrontDomainName:
+    Value: !GetAtt ImageDistribution.DomainName
+
+  CloudFrontDistributionId:
+    Value: !Ref ImageDistribution

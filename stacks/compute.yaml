@@ -1,0 +1,246 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Photo Uploader - ECS Fargate cluster, task definition, CodeDeploy-controlled
+  service, and a public ALB with a blue/green target group pair.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: photouploader
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+
+  PublicSubnet1Id:
+    Type: AWS::EC2::Subnet::Id
+
+  PublicSubnet2Id:
+    Type: AWS::EC2::Subnet::Id
+
+  PrivateSubnet1Id:
+    Type: AWS::EC2::Subnet::Id
+
+  PrivateSubnet2Id:
+    Type: AWS::EC2::Subnet::Id
+
+  AlbSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+
+  EcsSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+
+  AppContainerPort:
+    Type: Number
+    Default: 8080
+
+  ContainerCpu:
+    Type: String
+    Default: '256'
+
+  ContainerMemory:
+    Type: String
+    Default: '512'
+
+  AppImageUri:
+    Type: String
+    Description: >
+      Full ECR image URI (repo:tag) to seed the task definition with. A
+      valid, already-pushed image is required here since the ECS service
+      must reach a healthy steady state during stack creation.
+
+  EcsTaskExecutionRoleArn:
+    Type: String
+
+  EcsTaskRoleArn:
+    Type: String
+
+  DBSecretArn:
+    Type: String
+
+  DBEndpointAddress:
+    Type: String
+
+  DBEndpointPort:
+    Type: String
+
+  DBName:
+    Type: String
+
+  ImageBucketName:
+    Type: String
+
+  CloudFrontDomainName:
+    Type: String
+
+Resources:
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub ${ProjectName}-cluster
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+  AppLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /ecs/${ProjectName}
+      RetentionInDays: 30
+
+  Alb:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${ProjectName}-alb
+      Scheme: internet-facing
+      Type: application
+      SecurityGroups:
+        - !Ref AlbSecurityGroupId
+      Subnets:
+        - !Ref PublicSubnet1Id
+        - !Ref PublicSubnet2Id
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+  BlueTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub ${ProjectName}-tg-blue
+      VpcId: !Ref VpcId
+      Port: !Ref AppContainerPort
+      Protocol: HTTP
+      TargetType: ip
+      HealthCheckPath: /actuator/health
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Matcher:
+        HttpCode: '200'
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: '30'
+
+  GreenTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub ${ProjectName}-tg-green
+      VpcId: !Ref VpcId
+      Port: !Ref AppContainerPort
+      Protocol: HTTP
+      TargetType: ip
+      HealthCheckPath: /actuator/health
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Matcher:
+        HttpCode: '200'
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: '30'
+
+  AlbListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref Alb
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref BlueTargetGroup
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub ${ProjectName}-task
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: !Ref ContainerCpu
+      Memory: !Ref ContainerMemory
+      ExecutionRoleArn: !Ref EcsTaskExecutionRoleArn
+      TaskRoleArn: !Ref EcsTaskRoleArn
+      ContainerDefinitions:
+        - Name: app
+          Image: !Ref AppImageUri
+          Essential: true
+          PortMappings:
+            - ContainerPort: !Ref AppContainerPort
+              Protocol: tcp
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref AppLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: app
+          Environment:
+            - Name: DB_HOST
+              Value: !Ref DBEndpointAddress
+            - Name: DB_PORT
+              Value: !Ref DBEndpointPort
+            - Name: DB_NAME
+              Value: !Ref DBName
+            - Name: S3_BUCKET_NAME
+              Value: !Ref ImageBucketName
+            - Name: CLOUDFRONT_DOMAIN
+              Value: !Ref CloudFrontDomainName
+          Secrets:
+            - Name: DB_USERNAME
+              ValueFrom: !Sub '${DBSecretArn}:username::'
+            - Name: DB_PASSWORD
+              ValueFrom: !Sub '${DBSecretArn}:password::'
+
+  Service:
+    Type: AWS::ECS::Service
+    DependsOn: AlbListener
+    Properties:
+      ServiceName: !Sub ${ProjectName}-service
+      Cluster: !Ref Cluster
+      TaskDefinition: !Ref TaskDefinition
+      DesiredCount: 1
+      LaunchType: FARGATE
+      DeploymentController:
+        Type: CODE_DEPLOY
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets:
+            - !Ref PrivateSubnet1Id
+            - !Ref PrivateSubnet2Id
+          SecurityGroups:
+            - !Ref EcsSecurityGroupId
+      LoadBalancers:
+        - ContainerName: app
+          ContainerPort: !Ref AppContainerPort
+          TargetGroupArn: !Ref BlueTargetGroup
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+Outputs:
+  ClusterName:
+    Value: !Ref Cluster
+
+  ServiceName:
+    Value: !GetAtt Service.Name
+
+  TaskDefinitionFamily:
+    Value: !Sub ${ProjectName}-task
+
+  AlbDnsName:
+    Value: !GetAtt Alb.DNSName
+
+  AlbListenerArn:
+    Value: !Ref AlbListener
+
+  BlueTargetGroupArn:
+    Value: !Ref BlueTargetGroup
+
+  GreenTargetGroupArn:
+    Value: !Ref GreenTargetGroup
+
+  BlueTargetGroupName:
+    Value: !GetAtt BlueTargetGroup.TargetGroupName
+
+  GreenTargetGroupName:
+    Value: !GetAtt GreenTargetGroup.TargetGroupName
