@@ -71,6 +71,14 @@ Resources:
                   - ecr:BatchGetImage
                   - ecr:GetDownloadUrlForLayer
                 Resource: !Ref EcrRepositoryArn
+        - PolicyName: ReadLiveTaskDefinition
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: DescribeTaskDefinitionForDeployBundle
+                Effect: Allow
+                Action: ecs:DescribeTaskDefinition
+                Resource: '*'
       Tags:
         - Key: Project
           Value: !Ref ProjectName
