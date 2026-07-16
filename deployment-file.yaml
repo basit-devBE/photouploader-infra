@@ -6,8 +6,9 @@ parameters:
   GitHubOrg: basit-devBE
   GitHubAppRepo: photouploader-app
   GitHubBranch: main
-  # Must already exist in ECR before GitSync applies this file - see README.md
-  AppImageUri: 124355645722.dkr.ecr.eu-central-1.amazonaws.com/photouploader:bootstrap
+  # Bootstraps the first ECS service deploy (serves 200 on /actuator/health)
+  # until the real pipeline pushes the actual app image via blue/green.
+  AppImageUri: 124355645722.dkr.ecr.eu-central-1.amazonaws.com/ecs-lab-bootstrap:latest
   DBInstanceClass: db.t3.micro
   DBName: photouploader
 capabilities:
