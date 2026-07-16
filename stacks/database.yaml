@@ -33,6 +33,7 @@ Resources:
   DBSubnetGroup:
     Type: AWS::RDS::DBSubnetGroup
     Properties:
+      DBSubnetGroupName: !Sub ${ProjectName}-db-subnet-group
       DBSubnetGroupDescription: Private subnets for the Photo Uploader RDS instance
       SubnetIds:
         - !Ref PrivateSubnet1Id
@@ -62,6 +63,7 @@ Resources:
     DeletionPolicy: Delete
     UpdateReplacePolicy: Delete
     Properties:
+      DBInstanceIdentifier: !Sub ${ProjectName}-db
       Engine: postgres
       DBInstanceClass: !Ref DBInstanceClass
       DBName: !Ref DBName
