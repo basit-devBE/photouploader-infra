@@ -31,9 +31,11 @@ Parameters:
 
   AppImageUri:
     Type: String
+    Default: ''
     Description: >
       Full ECR image URI (repo:tag) used to seed the ECS task definition.
-      Must already exist in ECR before this stack is created/updated.
+      Must already exist in ECR before DeployCompute is set to true - see
+      DeployCompute below. Ignored while DeployCompute is false.
 
   DBInstanceClass:
     Type: String
@@ -42,6 +44,24 @@ Parameters:
   DBName:
     Type: String
     Default: photouploader
+
+  DeployCompute:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: >
+      Two-phase bootstrap switch. The ECS service needs a real image already
+      sitting in the (this same stack's) ECR repo to reach a healthy steady
+      state - which can't exist on a repo this same deploy is creating. Phase
+      1: leave this false, deploy network/security/storage/database/ecr/iam
+      only, then manually build+push the app image to the now-existing ECR
+      repo. Phase 2: set this true (and set AppImageUri to that image) and
+      push again to add compute/autoscaling/cicd. Once real deploys happen
+      through the pipeline, CodeDeploy - not this parameter - manages the
+      running image from then on.
+
+Conditions:
+  ShouldDeployCompute: !Equals [!Ref DeployCompute, 'true']
 
 Resources:
   NetworkStack:
@@ -119,6 +139,7 @@ Resources:
 
   ComputeStack:
     Type: AWS::CloudFormation::Stack
+    Condition: ShouldDeployCompute
     Properties:
       TemplateURL: !Sub https://${TemplatesBucketName}.s3.${AWS::Region}.amazonaws.com/stacks/compute.yaml
       Parameters:
@@ -145,6 +166,7 @@ Resources:
 
   AutoscalingStack:
     Type: AWS::CloudFormation::Stack
+    Condition: ShouldDeployCompute
     Properties:
       TemplateURL: !Sub https://${TemplatesBucketName}.s3.${AWS::Region}.amazonaws.com/stacks/autoscaling.yaml
       Parameters:
@@ -157,6 +179,7 @@ Resources:
 
   CicdStack:
     Type: AWS::CloudFormation::Stack
+    Condition: ShouldDeployCompute
     Properties:
       TemplateURL: !Sub https://${TemplatesBucketName}.s3.${AWS::Region}.amazonaws.com/stacks/cicd.yaml
       Parameters:
@@ -177,6 +200,7 @@ Resources:
 
 Outputs:
   AlbDnsName:
+    Condition: ShouldDeployCompute
     Description: Public ALB endpoint for the application
     Value: !GetAtt ComputeStack.Outputs.AlbDnsName
 
@@ -192,7 +216,9 @@ Outputs:
     Value: !GetAtt IamStack.Outputs.GitHubActionsRoleArn
 
   PipelineName:
+    Condition: ShouldDeployCompute
     Value: !GetAtt CicdStack.Outputs.PipelineName
 
   ArtifactBucketName:
+    Condition: ShouldDeployCompute
     Value: !GetAtt CicdStack.Outputs.ArtifactBucketName

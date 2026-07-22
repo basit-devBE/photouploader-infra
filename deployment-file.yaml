@@ -6,11 +6,20 @@ parameters:
   GitHubOrg: basit-devBE
   GitHubAppRepo: photouploader-app
   GitHubBranch: main
-  # Bootstraps the first ECS service deploy (serves 200 on /actuator/health)
-  # until the real pipeline pushes the actual app image via blue/green.
-  AppImageUri: 124355645722.dkr.ecr.eu-central-1.amazonaws.com/ecs-lab-bootstrap:latest
   DBInstanceClass: db.t3.micro
   DBName: photouploader
+  # Phase 1 (this state): leave DeployCompute false and AppImageUri empty.
+  # This deploys network/security/storage/database/ecr/iam only, creating
+  # the (empty) photouploader ECR repo.
+  #
+  # Phase 2 (after phase 1 succeeds): build+push the real app image to that
+  # repo manually once, then set:
+  #   DeployCompute: 'true'
+  #   AppImageUri: 124355645722.dkr.ecr.eu-central-1.amazonaws.com/photouploader:<tag just pushed>
+  # and push again to add compute/autoscaling/cicd. From then on CodeDeploy
+  # manages the running image - this parameter is never touched again.
+  DeployCompute: 'false'
+  AppImageUri: ''
 capabilities:
   - CAPABILITY_NAMED_IAM
   - CAPABILITY_AUTO_EXPAND
