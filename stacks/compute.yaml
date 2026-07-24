@@ -44,9 +44,10 @@ Parameters:
   AppImageUri:
     Type: String
     Description: >
-      Full ECR image URI (repo:tag) to seed the task definition with. A
-      valid, already-pushed image is required here since the ECS service
-      must reach a healthy steady state during stack creation.
+      Full ECR image URI (repo:tag) to seed the task definition with.
+      Computed by the caller as "<ecr-repo-uri>:latest" - a valid,
+      already-pushed image is required here since the ECS service must
+      reach a healthy steady state during stack creation.
 
   EcsTaskExecutionRoleArn:
     Type: String

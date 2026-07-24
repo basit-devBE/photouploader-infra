@@ -29,14 +29,6 @@ Parameters:
     Type: String
     Default: main
 
-  AppImageUri:
-    Type: String
-    Default: ''
-    Description: >
-      Full ECR image URI (repo:tag) used to seed the ECS task definition.
-      Must already exist in ECR before DeployCompute is set to true - see
-      DeployCompute below. Ignored while DeployCompute is false.
-
   DBInstanceClass:
     Type: String
     Default: db.t3.micro
@@ -54,11 +46,11 @@ Parameters:
       sitting in the (this same stack's) ECR repo to reach a healthy steady
       state - which can't exist on a repo this same deploy is creating. Phase
       1: leave this false, deploy network/security/storage/database/ecr/iam
-      only, then manually build+push the app image to the now-existing ECR
-      repo. Phase 2: set this true (and set AppImageUri to that image) and
-      push again to add compute/autoscaling/cicd. Once real deploys happen
-      through the pipeline, CodeDeploy - not this parameter - manages the
-      running image from then on.
+      only, then manually build+push the app image, tagged :latest, to the
+      now-existing ECR repo. Phase 2: set this true and push again to add
+      compute/autoscaling/cicd - the image URI is computed automatically as
+      "<repo-uri>:latest", so nothing else needs updating. Once real deploys
+      happen through the pipeline, CodeDeploy manages the running image.
 
 Conditions:
   ShouldDeployCompute: !Equals [!Ref DeployCompute, 'true']
@@ -151,7 +143,7 @@ Resources:
         PrivateSubnet2Id: !GetAtt NetworkStack.Outputs.PrivateSubnet2Id
         AlbSecurityGroupId: !GetAtt SecurityStack.Outputs.AlbSecurityGroupId
         EcsSecurityGroupId: !GetAtt SecurityStack.Outputs.EcsSecurityGroupId
-        AppImageUri: !Ref AppImageUri
+        AppImageUri: !Sub ${EcrStack.Outputs.RepositoryUri}:latest
         EcsTaskExecutionRoleArn: !GetAtt IamStack.Outputs.EcsTaskExecutionRoleArn
         EcsTaskRoleArn: !GetAtt IamStack.Outputs.EcsTaskRoleArn
         DBSecretArn: !GetAtt DatabaseStack.Outputs.DBSecretArn

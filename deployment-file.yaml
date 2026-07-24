@@ -8,12 +8,15 @@ parameters:
   GitHubBranch: main
   DBInstanceClass: db.t3.micro
   DBName: photouploader
-  # Phase 2: photouploader ECR repo already has a real app image (pushed by
-  # the app repo's GitHub Actions workflow), so compute/autoscaling/cicd can
-  # now be added. From here on CodeDeploy manages the running image via
-  # blue/green deploys - this parameter is not touched again after this.
-  DeployCompute: 'true'
-  AppImageUri: 124355645722.dkr.ecr.eu-central-1.amazonaws.com/photouploader:32d1377964ab93225df2492b57b87748670408cf
+  # Phase 1 (this state): deploys network/security/storage/database/ecr/iam
+  # only, creating the (empty) photouploader ECR repo.
+  #
+  # Phase 2: once the app repo's GitHub Actions workflow has pushed a real
+  # image tagged :latest to that repo, set DeployCompute to 'true' and push
+  # again to add compute/autoscaling/cicd. The image URI is computed
+  # automatically from the ECR repo's own URI + ":latest" - nothing else to
+  # set. From then on CodeDeploy manages the running image via blue/green.
+  DeployCompute: 'false'
 capabilities:
 - CAPABILITY_NAMED_IAM
 - CAPABILITY_AUTO_EXPAND
