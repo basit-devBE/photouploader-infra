@@ -23,5 +23,3 @@ capabilities:
 tags:
   Project: photouploader
   ManagedBy: CloudFormation-GitSync
-
-#trigger
