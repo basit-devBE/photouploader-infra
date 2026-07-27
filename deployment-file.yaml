@@ -23,4 +23,3 @@ capabilities:
 tags:
   Project: photouploader
   ManagedBy: CloudFormation-GitSync
-# retrigger sync: recreating the stack fresh with the correct deployment role
